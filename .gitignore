@@ -1,2 +1,3 @@
+# LAMMPS outputs to ignore
 *.out
 *.dump
