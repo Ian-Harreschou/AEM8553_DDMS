@@ -1,0 +1,77 @@
+# BASE INPUT FILE FOR RUNNING TIP4P WATER GEOMETRY IN AN NPT ENSEMBLE
+# TIP4P model of water is read in from `TIP4P.mol` file
+
+variable temp equal 300.0
+variable vinit equal ${temp}*2.0
+
+# File copied then modified from https://docs.lammps.org/Howto_tip4p.html
+
+# real units := Angs, femtosec, g/mol, kcal/mol, K
+units real
+
+# define atom styles
+atom_style charge
+atom_modify map array
+
+# define simulation region
+# MUST BE ORTHOGONAL for rigid/npt/small fix style
+region box block -20 20 -20 20 -20 20
+create_box 3 box
+
+# assign masses to each atom type (O, H, "massless" M)
+mass 1 15.9994
+mass 2 1.008
+mass 3 1.0e-100
+
+# define pair styles
+pair_style lj/cut/coul/long 8.5 # paper uses LJ truncated at 8.5 Ang
+pair_coeff 1 1 0.1550 3.1536
+pair_coeff 2 2 0.0    1.0
+pair_coeff 3 3 0.0    1.0
+
+kspace_style ewald/disp 1.0e-4 # correct for long-range Coul interactions w/ Ewald summation, to given precision
+			# also available: ewald/dipole for long-range + dipole-dipole
+kspace_modify cutoff/adjust yes # 
+				
+#kspace_modify kmax/ewald 5 5 5 # modifies number of vectors in reciprocal space -- paper modifies for each phase
+
+
+fix mol all property/atom mol ghost yes
+
+# load the TIP4P geometry, located in same directory
+molecule water TIP4P.mol
+
+create_atoms 0 random 3300 34564 NULL mol water 25367 overlap 1.33
+
+# exclude all intramolecular interactions for `molecule` (TIP4P water)
+neigh_modify exclude molecule/intra all
+
+# set timestep [fs]
+timestep 0.25
+
+# set initial velocities
+velocity all create ${vinit} 123456
+
+# perform time integration w/ rigid/small 
+# temp integration w/ Langevin thermostat, press integration w/ Berendsen barostat
+# can also use fix shake, which treats atoms as point masses
+fix integrate all rigid/small molecule
+fix thermostat all langevin ${temp} ${temp} 100.0 2345634
+fix barostat all press/berendsen iso 1.0132 1.0132 1000.0
+
+#fix integrate all rigid/npt/small molecule langevin ${temp} ${temp} 100.0 iso 1.0132 1.0132 10.0 2345634
+
+# define thermo styles
+# record sim timestep, temperature, pressure, total energy (KE + PE), mass density, PE + KE
+thermo_style custom step temp press etotal density pe ke
+
+# specify dump frequency of thermo quantities
+thermo 100
+
+# specify number of MD steps to run
+run 4000
+
+#dump 1 all atom 500 dump.tip4p.lammpstrj
+#dump_modify 1 sort id
+
+write_data tip4p-explicit.data nocoeff
