@@ -1,0 +1,86 @@
+### set variables ###
+
+### model parameters ###
+variable	fname		equal first_test
+variable	T		equal 298
+variable	tDamp		equal 100
+variable    	rcut		equal 10
+variable    	ell		equal 46.9555045
+
+### TIP4P/Ice w/out LJ interactions ###
+units		real	
+atom_style	full
+boundary        p p p
+pair_style      lj/cut/tip4p/long 1 2 1 1 0.1546 ${rcut} ${rcut}
+bond_style      zero
+angle_style     zero
+kspace_style    pppm/tip4p 1e-4 # Default value from LAMMPS
+read_data	water_eql.dat
+
+mass 2 1.00794 # H
+mass 1 15.9994 # O
+
+bond_style zero
+bond_coeff 1 0.9572
+
+angle_style zero
+angle_coeff 1 104.52
+
+## LJ Coeffs
+pair_coeff   2 2 0.00000 1      #Hw-Hw
+pair_coeff   1 1 0.1852  3.1589 #Ow-Ow
+pair_coeff   1 2 0.00000 1      #Hw-Ow
+
+# create groups ###
+group Ow type 1
+group Hw type 2
+group water type 1 2
+
+## set charges manually ###
+set group Ow charge -1.1128
+set group Hw charge 0.5564
+
+##########################################################################
+
+# Choose particular neighbor list updating
+neighbor            2.0 bin
+neigh_modify        every 2 delay 10 check no
+
+# Fix the water bonds to make a rigid molecule 
+fix                fxshake water shake 0.0001 20 0 b 1 a 1 t 1 2 
+
+# Minimize energy of the system using CG
+#min_style cg
+#minimize           1.0e-6 1.0e-6 100000 400000
+
+# Shrink the box
+#fix                fxshrink all deform 1 x final 0.0 ${ell} y final 0.0 ${ell} z final 0.0 ${ell}
+#thermo             100
+#thermo_style       custom step time temp press vol density etail etotal pe lx ly lz
+#timestep           0.2
+#fix                fxnvtshrink all nvt temp ${T} ${T} ${tDamp}
+#run                50000
+#unfix              fxnvtshrink
+#unfix              fxshrink
+
+# Equilibrate the simulation in NVT.
+thermo             100
+thermo_style       custom step time temp press vol density etotal pe lx
+timestep           1
+fix                fxnvteq all nvt temp ${T} ${T} ${tDamp}
+run                500000
+unfix              fxnvteq
+
+# Create a way to save the data
+fix                fxnvt all nvt temp ${T} ${T} ${tDamp}
+thermo             1000
+thermo_modify      flush yes norm no
+thermo_style 	   custom step time temp press vol density etotal  pe lx
+dump               dumpxyz all custom 1000 dump.lammpstrj id type xs ys zs
+dump_modify        dumpxyz sort id 
+
+# Run the simulation
+run                2000000  
+
+# Write the final
+write_data	   final_conf.dat

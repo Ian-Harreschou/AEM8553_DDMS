@@ -1,0 +1,98 @@
+### set variables ###
+
+log __filename_log.h20
+
+### model parameters ###
+variable	fname		 equal __filename
+variable	OHtable		 equal __OHtable
+variable	OOtable		 equal __OOtable
+variable	HHtable		 equal __HHtable
+variable	T		     equal __temperature
+variable	tDamp		 equal __tDamp
+variable    rcut         equal __rcut
+variable    keyword      equal __keyword
+variable    ell          equal __ell
+
+### TIP4P/Ice w/out LJ interactions ###
+units		real	
+atom_style	full
+boundary        p p p
+#pair_style      hybrid/overlay table linear 1000 lj/cut/tip4p/long 1 2 1 1 0.1577 ${rcut} ${rcut}
+pair_style      table linear 1000 
+# Hybrid style between a linear 1000 point lookup table and a TI4P LJ with atoms 1 and 2 and bond and angle 1. 
+# The displacement of the extra charge is the 0.1577. rcut rcut is the cutoff for the LJ and the Couloumbic repectively
+bond_style      harmonic
+angle_style     harmonic
+kspace_style    pppm/tip4p 1e-4 # Default value from LAMMPS
+read_data	water_eql.dat
+
+mass 2 1.00794 # H
+mass 1 15.9994 # O
+
+# Bond & Angle Coeffs
+bond_coeff  1 10000.0 0.9572  # O-H water
+angle_coeff  1 5000.0 104.52  # H-O-H water
+
+## LJ Coeffs to 0
+#pair_coeff   2 2 lj/cut/tip4p/long 0.00000 0.00000 #Hw-Hw
+#pair_coeff   1 1 lj/cut/tip4p/long 0.00000 0.00000 #Ow-Ow
+#pair_coeff   1 2 lj/cut/tip4p/long 0.00000 0.00000 #Hw-Ow
+
+# Tabulated V(r)
+pair_coeff   1 1 oo.table keyword ${rcut}
+pair_coeff   1 2 oh.table keyword ${rcut}
+pair_coeff   2 2 hh.table keyword ${rcut}
+
+# create groups ###
+group Ow type 1
+group Hw type 2
+group water type 1 2
+
+## set charges manually ###
+set group Ow charge -1.1794
+set group Hw charge  0.5897
+
+##########################################################################
+
+# Choose particular neighbor list updating
+neighbor            2.0 bin
+neigh_modify        every 2 delay 10 check no
+
+# Fix the water bonds to make a rigid molecule 
+fix                fxshake water shake 0.0001 20 0 b 1 a 1 t 1 2 
+
+# Minimize energy of the system using CG
+#min_style cg
+#minimize           1.0e-6 1.0e-6 100000 400000
+
+# Shrink the box
+fix                fxshrink all deform 1 x final 0.0 ${ell} y final 0.0 ${ell} z final 0.0 ${ell}
+thermo             100
+thermo_style       custom step time temp press vol density etail etotal pe lx ly lz
+timestep           0.2
+fix                fxnvtshrink all nvt temp ${T} ${T} ${tDamp}
+run                50000
+unfix              fxnvtshrink
+unfix              fxshrink
+
+# Equilibrate the simulation in NVT.
+thermo             100
+thermo_style       custom step time temp press vol density etail etotal pe lx ly lz
+timestep           1
+fix                fxnvteq all nvt temp ${T} ${T} ${tDamp}
+run                500000
+unfix              fxnvteq
+
+# Create a way to save the data
+fix                fxnvt all nvt temp ${T} ${T} ${tDamp}
+thermo             1000
+thermo_modify      flush yes norm no
+thermo_style 	   custom step time temp press vol density etail etotal  pe lx ly lz
+dump               dumpxyz all custom 1000 __filename_dump.lammpstrj id type xs ys zs
+dump_modify        dumpxyz sort id 
+
+# Run the simulation
+run                2000000  
+
+# Write the final
+write_data         __filename_final_conf.dat
